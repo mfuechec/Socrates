@@ -78,12 +78,12 @@ export default function ChatInterface() {
         messages: updatedMessages,
       });
       setMessageInput('');
-      setUIState({ ...uiState, isLoading: false });
+      setUIState({ ...uiState, isLoading: false, error: null });
       setRetryAttempt(0);
     } catch (error: any) {
       // Don't show error if request was aborted
       if (error.name === 'AbortError') {
-        setUIState({ ...uiState, isLoading: false });
+        setUIState({ ...uiState, isLoading: false, error: null });
         setRetryAttempt(0);
         return;
       }
