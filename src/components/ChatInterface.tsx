@@ -160,6 +160,7 @@ export default function ChatInterface() {
       <MessageList
         messages={conversationState.messages}
         problemStatement={conversationState.problemStatement}
+        isLoading={uiState.isLoading}
       />
 
       {/* Input area */}
