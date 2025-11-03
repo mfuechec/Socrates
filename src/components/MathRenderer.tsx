@@ -1,7 +1,8 @@
 /**
  * Math renderer component
  * Parses and renders LaTeX equations using KaTeX
- * Supports inline ($...$) and block ($$...$$) math
+ * Supports inline: $...$ or \(...\)
+ * Supports block: $$...$$ or \[...\]
  */
 
 import { Fragment } from 'react';
@@ -72,19 +73,23 @@ function parseLatex(content: string): Array<{ type: 'text' | 'inline' | 'block';
   const parts: Array<{ type: 'text' | 'inline' | 'block'; content: string }> = [];
   let currentPos = 0;
 
-  // Regex to match $$...$$ (block) or $...$ (inline)
+  // Regex to match:
+  // Block: $$...$$ or \[...\]
+  // Inline: $...$ or \(...\)
   // Block must be checked first to avoid matching as inline
-  const blockRegex = /\$\$(.*?)\$\$/gs;
-  const inlineRegex = /\$(.*?)\$/g;
+  const blockRegex = /(\$\$(.*?)\$\$|\\\[(.*?)\\\])/gs;
+  const inlineRegex = /(\$(.*?)\$|\\\((.*?)\\\))/g;
 
   // First, find all block math occurrences
   const blockMatches: Array<{ start: number; end: number; content: string }> = [];
   let match;
   while ((match = blockRegex.exec(content)) !== null) {
+    // Extract content from either $$...$$ (group 2) or \[...\] (group 3)
+    const mathContent = match[2] || match[3];
     blockMatches.push({
       start: match.index,
       end: match.index + match[0].length,
-      content: match[1],
+      content: mathContent,
     });
   }
 
@@ -101,10 +106,12 @@ function parseLatex(content: string): Array<{ type: 'text' | 'inline' | 'block';
     );
 
     if (!isInsideBlock) {
+      // Extract content from either $...$ (group 2) or \(...\) (group 3)
+      const mathContent = match[2] || match[3];
       inlineMatches.push({
         start,
         end,
-        content: match[1],
+        content: mathContent,
       });
     }
   }

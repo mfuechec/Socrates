@@ -7,41 +7,31 @@ import { chatWithTutor } from './api-client';
 import type { Message, ConversationState } from '@/types/conversation';
 
 /**
- * Send a student message and get tutor response
+ * Get tutor response for current conversation
+ * Note: Student message should already be added to messages before calling
  */
 export async function sendMessage(
-  conversationState: ConversationState,
-  studentMessage: string,
+  problemStatement: string,
+  messages: Message[],
   signal?: AbortSignal,
   onRetry?: (attempt: number) => void
-): Promise<{ updatedMessages: Message[] }> {
-  // Add student message to history
-  const studentMsg: Message = {
-    role: 'student',
-    content: studentMessage,
-    timestamp: new Date(),
-  };
-
-  const messagesWithStudent = [...conversationState.messages, studentMsg];
-
+): Promise<{ tutorMessage: Message }> {
   // Get tutor response
   const tutorResponseText = await chatWithTutor(
-    conversationState.problemStatement,
-    messagesWithStudent,
+    problemStatement,
+    messages,
     signal,
     onRetry
   );
 
-  // Add tutor message to history
+  // Create tutor message
   const tutorMsg: Message = {
     role: 'tutor',
     content: tutorResponseText,
     timestamp: new Date(),
   };
 
-  const updatedMessages = [...messagesWithStudent, tutorMsg];
-
-  return { updatedMessages };
+  return { tutorMessage: tutorMsg };
 }
 
 /**

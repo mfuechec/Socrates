@@ -115,23 +115,19 @@ export default function ImageUpload({ onImageExtracted }: ImageUploadProps) {
       {!imagePreview && (
         <div
           {...getRootProps()}
-          className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
-            isDragActive
-              ? 'border-blue-500 bg-blue-50'
-              : 'border-gray-300 hover:border-gray-400'
-          }`}
+          className={`dropzone ${isDragActive ? 'dropzone-active' : ''}`}
         >
           <input {...getInputProps()} />
           <div className="space-y-2">
             <div className="text-4xl">📷</div>
             {isDragActive ? (
-              <p className="text-blue-600 font-medium">Drop image here...</p>
+              <p className="text-blue-600 dark:text-blue-400 font-medium">Drop image here...</p>
             ) : (
               <>
-                <p className="text-gray-700 font-medium">
+                <p className="text-label font-medium">
                   Drag & drop an image, or click to browse
                 </p>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-tertiary">
                   PNG or JPG, max 5MB, 200-4000px
                 </p>
               </>
@@ -142,14 +138,14 @@ export default function ImageUpload({ onImageExtracted }: ImageUploadProps) {
 
       {/* Error display */}
       {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+        <div className="alert-error">
           {error}
           {error.includes('extract') && (
             <p className="mt-2">
               Try uploading a clearer image or{' '}
               <button
                 onClick={handleReset}
-                className="underline font-medium hover:text-red-800"
+                className="underline font-medium hover:text-red-800 dark:hover:text-red-300"
               >
                 upload a different one
               </button>
@@ -167,12 +163,12 @@ export default function ImageUpload({ onImageExtracted }: ImageUploadProps) {
             <img
               src={imagePreview}
               alt="Uploaded problem"
-              className="max-w-full h-auto rounded-lg border border-gray-300"
+              className="max-w-full h-auto rounded-lg border border-primary"
               style={{ maxHeight: '300px' }}
             />
             <button
               onClick={handleReset}
-              className="absolute top-2 right-2 px-3 py-1 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700"
+              className="absolute top-2 right-2 px-3 py-1 bg-red-600 dark:bg-red-500 text-white text-sm rounded-lg hover:bg-red-700 dark:hover:bg-red-600"
             >
               Remove
             </button>
@@ -180,9 +176,9 @@ export default function ImageUpload({ onImageExtracted }: ImageUploadProps) {
 
           {/* Extracting state */}
           {isExtracting && (
-            <div className="flex items-center justify-center space-x-3 p-4 bg-blue-50 rounded-lg">
-              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-              <span className="text-blue-700 font-medium">
+            <div className="flex items-center justify-center space-x-3 alert-info">
+              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 dark:border-blue-400"></div>
+              <span className="text-blue-700 dark:text-blue-400 font-medium">
                 Extracting text from image...
               </span>
             </div>
@@ -192,13 +188,13 @@ export default function ImageUpload({ onImageExtracted }: ImageUploadProps) {
           {extractedText && !isExtracting && (
             <div className="space-y-3">
               <div className="flex justify-between items-center">
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-label">
                   Extracted Problem (you can edit if needed)
                 </label>
                 {!isEditing && (
                   <button
                     onClick={() => setIsEditing(true)}
-                    className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                    className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium"
                   >
                     Edit
                   </button>
@@ -208,10 +204,10 @@ export default function ImageUpload({ onImageExtracted }: ImageUploadProps) {
                 value={extractedText}
                 onChange={(e) => setExtractedText(e.target.value)}
                 disabled={!isEditing}
-                className={`w-full px-4 py-3 border rounded-lg resize-none ${
+                className={`w-full resize-none ${
                   isEditing
-                    ? 'border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent'
-                    : 'border-gray-200 bg-gray-50 cursor-not-allowed'
+                    ? 'input-field'
+                    : 'px-4 py-3 border border-secondary bg-gray-50 dark:bg-gray-800 text-primary rounded-lg cursor-not-allowed'
                 }`}
                 rows={4}
                 maxLength={500}
@@ -219,11 +215,7 @@ export default function ImageUpload({ onImageExtracted }: ImageUploadProps) {
               <button
                 onClick={handleUseProblem}
                 disabled={!extractedText.trim()}
-                className={`w-full py-3 px-6 rounded-lg font-medium text-white transition-colors ${
-                  extractedText.trim()
-                    ? 'bg-blue-600 hover:bg-blue-700'
-                    : 'bg-gray-300 cursor-not-allowed'
-                }`}
+                className="w-full btn-primary"
               >
                 Use This Problem
               </button>

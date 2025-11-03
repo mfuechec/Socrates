@@ -3,7 +3,7 @@
  * Owns ConversationState and UIState, coordinates all interactions
  */
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import ProblemInput from './ProblemInput';
 import MessageList from './MessageList';
 import type { ConversationState } from '@/types/conversation';
@@ -18,6 +18,17 @@ import { getErrorMessage } from '@/lib/error-messages';
 const MAX_MESSAGE_LENGTH = 1000;
 
 export default function ChatInterface() {
+  // Dark mode state
+  const [darkMode, setDarkMode] = useState(false);
+
+  // Apply dark mode class to document
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [darkMode]);
   // Conversation state
   const [conversationState, setConversationState] =
     useState<ConversationState>({
@@ -41,6 +52,16 @@ export default function ChatInterface() {
   // AbortController for cancelling requests
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  // Message input ref for focus management
+  const messageInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Auto-focus input after response arrives
+  useEffect(() => {
+    if (!uiState.isLoading && conversationState.messages.length > 0) {
+      messageInputRef.current?.focus();
+    }
+  }, [uiState.isLoading, conversationState.messages.length]);
+
   // Handle problem submission (start conversation)
   const handleProblemSubmit = (problem: string) => {
     setConversationState({
@@ -56,6 +77,23 @@ export default function ChatInterface() {
     const trimmedMessage = messageInput.trim();
     if (!trimmedMessage || uiState.isLoading) return;
 
+    // Create student message immediately
+    const studentMsg: import('@/types/conversation').Message = {
+      role: 'student',
+      content: trimmedMessage,
+      timestamp: new Date(),
+    };
+
+    // Add student message to UI immediately (optimistic update)
+    const messagesWithStudent = [...conversationState.messages, studentMsg];
+    setConversationState({
+      ...conversationState,
+      messages: messagesWithStudent,
+    });
+
+    // Clear input immediately
+    setMessageInput('');
+
     // Create new AbortController for this request
     abortControllerRef.current = new AbortController();
 
@@ -63,9 +101,9 @@ export default function ChatInterface() {
     setRetryAttempt(0);
 
     try {
-      const { updatedMessages } = await sendMessage(
-        conversationState,
-        trimmedMessage,
+      const { tutorMessage } = await sendMessage(
+        conversationState.problemStatement,
+        messagesWithStudent,
         abortControllerRef.current.signal,
         (attempt) => {
           // Update retry count in UI
@@ -73,11 +111,11 @@ export default function ChatInterface() {
         }
       );
 
+      // Add tutor response to messages
       setConversationState({
         ...conversationState,
-        messages: updatedMessages,
+        messages: [...messagesWithStudent, tutorMessage],
       });
-      setMessageInput('');
       setUIState({ ...uiState, isLoading: false, error: null });
       setRetryAttempt(0);
     } catch (error: any) {
@@ -132,28 +170,37 @@ export default function ChatInterface() {
 
   // Show chat interface
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
+    <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900">
       {/* Header with turn counter and reset button */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
+      <div className="card-bg border-b border-secondary px-6 py-4 flex justify-between items-center">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900">
+          <h2 className="text-lg font-semibold text-heading">
             Socrates Math Tutor
           </h2>
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-secondary">
             Turn {turnCount}
             {showLengthWarning && (
-              <span className="ml-2 text-yellow-600 font-medium">
+              <span className="ml-2 text-yellow-600 dark:text-yellow-500 font-medium">
                 ⚠ Consider starting a new problem
               </span>
             )}
           </p>
         </div>
-        <button
-          onClick={handleReset}
-          className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-        >
-          New Problem
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setDarkMode(!darkMode)}
+            className="btn-secondary"
+            title={darkMode ? 'Light mode' : 'Dark mode'}
+          >
+            {darkMode ? '☀️' : '🌙'}
+          </button>
+          <button
+            onClick={handleReset}
+            className="btn-secondary"
+          >
+            New Problem
+          </button>
+        </div>
       </div>
 
       {/* Message list */}
@@ -164,12 +211,12 @@ export default function ChatInterface() {
       />
 
       {/* Input area */}
-      <div className="bg-white border-t border-gray-200 p-6">
+      <div className="card-bg border-t border-secondary p-6">
         {/* Retry indicator */}
         {retryAttempt > 0 && (
-          <div className="mb-4 flex items-center justify-center space-x-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-600"></div>
-            <span className="text-yellow-700 text-sm font-medium">
+          <div className="mb-4 flex items-center justify-center space-x-3 alert-warning">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-600 dark:border-yellow-500"></div>
+            <span className="text-sm font-medium">
               Retrying... (attempt {retryAttempt}/3)
             </span>
           </div>
@@ -177,7 +224,7 @@ export default function ChatInterface() {
 
         {/* Error display */}
         {uiState.error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+          <div className="mb-4 alert-error">
             {uiState.error}
           </div>
         )}
@@ -186,27 +233,24 @@ export default function ChatInterface() {
         <form onSubmit={handleSendMessage} className="max-w-4xl mx-auto">
           <div className="flex gap-3">
             <input
+              ref={messageInputRef}
               type="text"
               value={messageInput}
               onChange={(e) => setMessageInput(e.target.value)}
               placeholder="Type your response..."
               disabled={uiState.isLoading}
               maxLength={MAX_MESSAGE_LENGTH}
-              className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+              className="flex-1 input-field"
             />
             <button
               type="submit"
               disabled={!messageValid || uiState.isLoading}
-              className={`px-6 py-3 rounded-lg font-medium text-white transition-colors ${
-                messageValid && !uiState.isLoading
-                  ? 'bg-blue-600 hover:bg-blue-700'
-                  : 'bg-gray-300 cursor-not-allowed'
-              }`}
+              className="btn-primary"
             >
               {uiState.isLoading ? 'Sending...' : 'Send'}
             </button>
           </div>
-          <p className="text-xs text-gray-500 mt-2">
+          <p className="text-xs text-tertiary mt-2">
             {messageInput.length}/{MAX_MESSAGE_LENGTH} characters
           </p>
         </form>
