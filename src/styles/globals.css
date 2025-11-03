@@ -1,0 +1,44 @@
+/* Import KaTeX CSS for math rendering */
+@import 'katex/dist/katex.min.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom KaTeX styling */
+.math-content {
+  line-height: 1.6;
+}
+
+/* Inline math should flow with text */
+.math-content .katex {
+  font-size: inherit;
+}
+
+/* Block math should be centered with spacing */
+.math-content .katex-display {
+  margin: 1rem 0;
+  text-align: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* Error styling for failed LaTeX rendering */
+.katex-error {
+  color: #dc2626;
+  background-color: #fef2f2;
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  font-family: monospace;
+  font-size: 0.875em;
+  cursor: help;
+}
+
+/* Make KaTeX work well in colored message bubbles */
+.bg-blue-600 .katex {
+  color: white;
+}
+
+.bg-gray-200 .katex {
+  color: #111827;
+}
