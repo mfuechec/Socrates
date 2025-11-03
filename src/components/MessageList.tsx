@@ -28,7 +28,9 @@ export default function MessageList({
       {/* Problem statement header */}
       <div className="bg-gray-100 rounded-lg p-4 mb-6 sticky top-0 shadow-sm">
         <h3 className="text-sm font-medium text-gray-600 mb-1">Problem:</h3>
-        <p className="text-gray-900">{problemStatement}</p>
+        <div className="text-gray-900">
+          <MathRenderer content={problemStatement} />
+        </div>
       </div>
 
       {/* Messages */}
