@@ -121,14 +121,6 @@ function findTextPosition(
   const normalizedTarget = targetText.replace(/\s+/g, '');
   const normalizedText = text.replace(/\s+/g, '');
 
-  // Diagnostic logging
-  console.log('=== findTextPosition Debug ===');
-  console.log('Target text:', targetText);
-  console.log('Normalized target:', normalizedTarget);
-  console.log('Container textContent:', text);
-  console.log('Normalized container text:', normalizedText);
-  console.log('Index found:', normalizedText.indexOf(normalizedTarget));
-
   const index = normalizedText.indexOf(normalizedTarget);
   if (index === -1) {
     console.warn(`Target text "${targetText}" not found`);
@@ -156,8 +148,6 @@ function findTextPosition(
     // Get all bounding rectangles (one per line for multi-line text)
     const rects = range.getClientRects();
     const containerRect = container.getBoundingClientRect();
-
-    console.log(`Found ${rects.length} rectangle(s) for "${targetText}"`);
 
     // Convert DOMRectList to array of position objects
     return Array.from(rects).map((rect) => ({
