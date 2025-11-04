@@ -3,7 +3,7 @@
  * Coordinates API calls and maintains message history
  */
 
-import { chatWithTutor } from './api-client';
+import { chatWithTutor, chatWithTutorStreaming } from './api-client';
 import type { Message, ConversationState } from '@/types/conversation';
 import type { StepProgression } from '@/types/solution-path';
 
@@ -34,6 +34,52 @@ export async function sendMessage(
     pathContext,
     signal,
     onRetry
+  );
+
+  // Create tutor message with all metadata
+  const tutorMsg: Message = {
+    role: 'tutor',
+    content: tutorResponse.message,
+    annotations: tutorResponse.annotations,
+    currentState: tutorResponse.currentState,
+    isComplete: tutorResponse.isComplete,
+    timestamp: new Date(),
+  };
+
+  return {
+    tutorMessage: tutorMsg,
+    masteryLevel: tutorResponse.masteryLevel,
+    stepProgression: tutorResponse.stepProgression,
+  };
+}
+
+/**
+ * Get tutor response with STREAMING support
+ * Streams tokens in real-time via onToken callback
+ */
+export async function sendMessageStreaming(
+  problemStatement: string,
+  messages: Message[],
+  pathContext?: {
+    solutionPath: import('@/types/solution-path').SolutionPath;
+    approachIndex: number;
+    stepIndex: number;
+    struggleLevel: number;
+  },
+  onToken?: (token: string) => void,
+  signal?: AbortSignal
+): Promise<{
+  tutorMessage: Message;
+  masteryLevel?: import('@/types/whiteboard').MasteryLevel;
+  stepProgression?: StepProgression;
+}> {
+  // Get streaming tutor response
+  const tutorResponse = await chatWithTutorStreaming(
+    problemStatement,
+    messages,
+    pathContext,
+    onToken,
+    signal
   );
 
   // Create tutor message with all metadata

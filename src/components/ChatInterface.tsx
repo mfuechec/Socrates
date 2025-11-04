@@ -14,6 +14,7 @@ import type { UIState } from '@/types/ui';
 import type { Annotation } from '@/types/whiteboard';
 import {
   sendMessage,
+  sendMessageStreaming,
   getTurnCount,
   shouldWarnAboutLength,
 } from '@/lib/conversation-manager';
@@ -70,6 +71,24 @@ export default function ChatInterface() {
 
   // Message input
   const [messageInput, setMessageInput] = useState('');
+
+  // Streaming state
+  const [streamingEnabled, setStreamingEnabled] = useState(() => {
+    // Load from localStorage on mount
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('streamingEnabled');
+      return saved !== null ? saved === 'true' : true; // Default to enabled
+    }
+    return true;
+  });
+  const [streamingMessage, setStreamingMessage] = useState('');
+
+  // Save streaming preference to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('streamingEnabled', String(streamingEnabled));
+    }
+  }, [streamingEnabled]);
 
   // AbortController for cancelling requests
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -235,16 +254,31 @@ export default function ChatInterface() {
           }
         : undefined;
 
-      const { tutorMessage, masteryLevel: aiMasteryLevel, stepProgression } = await sendMessage(
-        conversationState.problemStatement,
-        messagesWithStudent,
-        pathContext,
-        abortControllerRef.current.signal,
-        (attempt) => {
-          // Update retry count in UI
-          setRetryAttempt(attempt);
-        }
-      );
+      // Use streaming or non-streaming based on toggle
+      const { tutorMessage, masteryLevel: aiMasteryLevel, stepProgression } = streamingEnabled
+        ? await sendMessageStreaming(
+            conversationState.problemStatement,
+            messagesWithStudent,
+            pathContext,
+            (token) => {
+              // Accumulate streaming tokens
+              setStreamingMessage((prev) => prev + token);
+            },
+            abortControllerRef.current.signal
+          )
+        : await sendMessage(
+            conversationState.problemStatement,
+            messagesWithStudent,
+            pathContext,
+            abortControllerRef.current.signal,
+            (attempt) => {
+              // Update retry count in UI
+              setRetryAttempt(attempt);
+            }
+          );
+
+      // Clear streaming message after completion
+      setStreamingMessage('');
 
       // Add tutor response to messages
       const updatedMessages = [...messagesWithStudent, tutorMessage];
@@ -436,6 +470,14 @@ export default function ChatInterface() {
             {darkMode ? '☀️' : '🌙'}
           </button>
 
+          <button
+            onClick={() => setStreamingEnabled(!streamingEnabled)}
+            className="btn-secondary"
+            title={streamingEnabled ? 'Streaming enabled (faster perceived speed)' : 'Streaming disabled'}
+          >
+            {streamingEnabled ? '⚡' : '📨'}
+          </button>
+
           {/* Show Similar Problem for struggling or competent students */}
           {(conversationState.masteryLevel === 'struggling' ||
             conversationState.masteryLevel === 'competent') && (
@@ -501,6 +543,7 @@ export default function ChatInterface() {
         messages={conversationState.messages}
         problemStatement={conversationState.problemStatement}
         isLoading={uiState.isLoading}
+        streamingMessage={streamingMessage}
         darkMode={darkMode}
         showWhiteboards={false}
       />

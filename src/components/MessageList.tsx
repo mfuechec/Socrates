@@ -18,6 +18,7 @@ interface MessageListProps {
   messages: Message[];
   problemStatement: string;  // Still needed for WhiteboardCanvas (when showWhiteboards=true)
   isLoading?: boolean;
+  streamingMessage?: string;  // Real-time streaming message
   darkMode?: boolean;  // For whiteboard color adaptation
   showWhiteboards?: boolean;  // Whether to render per-message whiteboards
 }
@@ -26,6 +27,7 @@ export default function MessageList({
   messages,
   problemStatement,
   isLoading = false,
+  streamingMessage = '',
   darkMode = false,
   showWhiteboards = true,
 }: MessageListProps) {
@@ -37,7 +39,7 @@ export default function MessageList({
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
     }
-  }, [messages, isLoading]);
+  }, [messages, isLoading, streamingMessage]);
 
   return (
     <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-6">
@@ -81,8 +83,21 @@ export default function MessageList({
           </div>
         ))}
 
+        {/* Streaming message (real-time tokens) */}
+        {streamingMessage && (
+          <div className="flex justify-start">
+            <div className="max-w-[80%] rounded-lg px-4 py-3 message-tutor">
+              <div className="text-xs opacity-75 mb-1">Socrates</div>
+              <div className="relative">
+                <MathRenderer content={streamingMessage} />
+                <span className="inline-block ml-1 w-2 h-4 bg-blue-500 animate-pulse"></span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Typing indicator */}
-        {isLoading && (
+        {isLoading && !streamingMessage && (
           <div className="flex justify-start">
             <div className="max-w-[80%] rounded-lg px-4 py-3 message-tutor">
               <div className="text-xs opacity-75 mb-1">Socrates</div>
