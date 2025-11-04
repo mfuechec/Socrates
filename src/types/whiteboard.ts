@@ -156,6 +156,7 @@ export interface TutorResponse {
   animationSequence?: AnimationStep[]; // Phase 2 feature
   isComplete?: boolean; // Has the student completed the problem?
   masteryLevel?: MasteryLevel; // AI's assessment of student understanding
+  stepProgression?: import('./solution-path').StepProgression; // Step progression metadata
 }
 
 // ============================================================================
