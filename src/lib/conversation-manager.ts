@@ -5,6 +5,7 @@
 
 import { chatWithTutor } from './api-client';
 import type { Message, ConversationState } from '@/types/conversation';
+import type { StepProgression } from '@/types/solution-path';
 
 /**
  * Get tutor response for current conversation
@@ -13,13 +14,24 @@ import type { Message, ConversationState } from '@/types/conversation';
 export async function sendMessage(
   problemStatement: string,
   messages: Message[],
+  pathContext?: {
+    solutionPath: import('@/types/solution-path').SolutionPath;
+    approachIndex: number;
+    stepIndex: number;
+    struggleLevel: number;
+  },
   signal?: AbortSignal,
   onRetry?: (attempt: number) => void
-): Promise<{ tutorMessage: Message; masteryLevel?: import('@/types/whiteboard').MasteryLevel }> {
-  // Get tutor response (includes message, annotations, and completion status)
+): Promise<{
+  tutorMessage: Message;
+  masteryLevel?: import('@/types/whiteboard').MasteryLevel;
+  stepProgression?: StepProgression;
+}> {
+  // Get tutor response (includes message, annotations, completion status, and step progression)
   const tutorResponse = await chatWithTutor(
     problemStatement,
     messages,
+    pathContext,
     signal,
     onRetry
   );
@@ -29,6 +41,7 @@ export async function sendMessage(
     role: 'tutor',
     content: tutorResponse.message,
     annotations: tutorResponse.annotations,
+    currentState: tutorResponse.currentState,
     isComplete: tutorResponse.isComplete,
     timestamp: new Date(),
   };
@@ -36,6 +49,7 @@ export async function sendMessage(
   return {
     tutorMessage: tutorMsg,
     masteryLevel: tutorResponse.masteryLevel,
+    stepProgression: tutorResponse.stepProgression,
   };
 }
 

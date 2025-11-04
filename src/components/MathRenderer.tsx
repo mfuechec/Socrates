@@ -1,7 +1,7 @@
 /**
  * Math renderer component
  * Parses and renders LaTeX equations using KaTeX
- * Supports inline: $...$ or \(...\)
+ * Supports inline: \(...\) only (single $ not supported to avoid conflicts with currency)
  * Supports block: $$...$$ or \[...\]
  */
 
@@ -75,10 +75,10 @@ function parseLatex(content: string): Array<{ type: 'text' | 'inline' | 'block';
 
   // Regex to match:
   // Block: $$...$$ or \[...\]
-  // Inline: $...$ or \(...\)
+  // Inline: \(...\) ONLY - we don't support single $...$ to avoid conflicts with currency
   // Block must be checked first to avoid matching as inline
   const blockRegex = /(\$\$(.*?)\$\$|\\\[(.*?)\\\])/gs;
-  const inlineRegex = /(\$(.*?)\$|\\\((.*?)\\\))/g;
+  const inlineRegex = /(\\\((.*?)\\\))/g;
 
   // First, find all block math occurrences
   const blockMatches: Array<{ start: number; end: number; content: string }> = [];
@@ -106,8 +106,8 @@ function parseLatex(content: string): Array<{ type: 'text' | 'inline' | 'block';
     );
 
     if (!isInsideBlock) {
-      // Extract content from either $...$ (group 2) or \(...\) (group 3)
-      const mathContent = match[2] || match[3];
+      // Extract content from \(...\) (group 2)
+      const mathContent = match[2];
       inlineMatches.push({
         start,
         end,

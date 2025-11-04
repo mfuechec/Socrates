@@ -1,438 +1,349 @@
 /**
  * WhiteboardCanvas Component
- * Renders annotations on math problems using Fabric.js v6
+ * Hybrid approach: HTML/KaTeX for text, positioned overlays for annotations
  */
 
-import { useEffect, useRef, useState } from 'react';
-import { Canvas, Rect, Text, Ellipse, Line, Group } from 'fabric';
+import { useRef, useEffect, useState, useMemo } from 'react';
 import type { Annotation } from '@/types/whiteboard';
+import MathRenderer from '../MathRenderer';
 
 interface WhiteboardCanvasProps {
   problemText: string;
+  currentState?: string; // Current equation state (if student made progress)
   annotations: Annotation[];
   darkMode?: boolean;
 }
 
+interface AnnotationElement {
+  id: string;
+  annotation: Annotation;
+  positions: { left: number; top: number; width: number; height: number }[];
+}
+
 export default function WhiteboardCanvas({
   problemText,
+  currentState,
   annotations,
   darkMode = false,
 }: WhiteboardCanvasProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const fabricCanvasRef = useRef<Canvas | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [renderErrors, setRenderErrors] = useState<string[]>([]);
+  const textContainerRef = useRef<HTMLDivElement>(null);
+  const [annotationElements, setAnnotationElements] = useState<AnnotationElement[]>([]);
 
-  // Initialize Fabric canvas
+  // Display current state if available, otherwise show original problem
+  const rawDisplayText = currentState || problemText;
+
+  // Auto-wrap in $ delimiters if it contains LaTeX commands but no delimiters
+  const displayText = autoWrapLatex(rawDisplayText);
+
+  // Calculate annotation positions whenever text or annotations change
   useEffect(() => {
-    if (!canvasRef.current) return;
+    if (!textContainerRef.current) return;
 
-    // Create Fabric canvas
-    const canvas = new Canvas(canvasRef.current, {
-      selection: false,
-      backgroundColor: darkMode ? '#1f2937' : '#ffffff',
-      width: 600,
-      height: 100,
-    });
+    const container = textContainerRef.current;
+    const elements: AnnotationElement[] = [];
 
-    fabricCanvasRef.current = canvas;
-
-    // Cleanup on unmount
-    return () => {
-      canvas.dispose();
-      fabricCanvasRef.current = null;
-    };
-  }, [darkMode]);
-
-  // Render problem text and annotations
-  useEffect(() => {
-    const canvas = fabricCanvasRef.current;
-    if (!canvas) return;
-
-    // Clear canvas completely - remove all objects
-    canvas.clear();
-    canvas.backgroundColor = darkMode ? '#1f2937' : '#ffffff';
-    canvas.renderAll();
-
-    const errors: string[] = [];
-
-    // Render problem text
-    const textColor = darkMode ? '#f3f4f6' : '#111827';
-    const problemTextObj = new Text(problemText, {
-      left: 20,
-      top: 30,
-      fontSize: 24,
-      fontFamily: 'monospace',
-      fill: textColor,
-      selectable: false,
-      evented: false,
-    });
-
-    canvas.add(problemTextObj);
-
-    // Render annotations
     annotations.forEach((ann, idx) => {
-      try {
-        renderAnnotation(canvas, ann, problemTextObj, darkMode);
-      } catch (error) {
-        console.error(`Failed to render annotation ${idx}:`, error);
-        errors.push(`Annotation ${idx} failed to render`);
+      if (ann.target.mode !== 'text' || !ann.target.text) {
+        console.warn('Only text-mode annotations are supported');
+        return;
       }
+
+      // Find the target text in the container
+      const positions = findTextPosition(container, ann.target.text);
+
+      elements.push({
+        id: `ann-${idx}`,
+        annotation: ann,
+        positions,
+      });
     });
 
-    setRenderErrors(errors);
-    canvas.requestRenderAll();
-  }, [problemText, annotations, darkMode]);
-
-  // Responsive canvas sizing
-  useEffect(() => {
-    const handleResize = () => {
-      const canvas = fabricCanvasRef.current;
-      const container = containerRef.current;
-
-      if (!canvas || !container) return;
-
-      const width = Math.min(container.offsetWidth, 600);
-      canvas.setDimensions({ width, height: 100 });
-      canvas.requestRenderAll();
-    };
-
-    handleResize();
-    window.addEventListener('resize', handleResize);
-
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    setAnnotationElements(elements);
+  }, [annotations, displayText]);
 
   return (
-    <div ref={containerRef} className="my-4">
-      <canvas ref={canvasRef} />
-
-      {/* Show errors in development */}
-      {process.env.NODE_ENV === 'development' && renderErrors.length > 0 && (
-        <div className="mt-2 text-sm text-yellow-600 dark:text-yellow-500">
-          ⚠ {renderErrors.length} annotation(s) failed to render
+    <div className="relative my-4">
+      {/* Original problem (if currentState exists) */}
+      {currentState && (
+        <div
+          className={`text-sm font-mono mb-2 ${
+            darkMode ? 'text-gray-400' : 'text-gray-500'
+          }`}
+        >
+          <MathRenderer content={autoWrapLatex(problemText)} />
         </div>
       )}
+
+      {/* Main problem display with annotations */}
+      <div className="relative">
+        <div
+          ref={textContainerRef}
+          className={`font-mono text-2xl p-4 rounded-lg relative ${
+            currentState
+              ? darkMode
+                ? 'text-blue-300 font-bold'
+                : 'text-blue-600 font-bold'
+              : darkMode
+              ? 'text-gray-100'
+              : 'text-gray-900'
+          } ${darkMode ? 'bg-gray-800' : 'bg-gray-50'}`}
+          style={{ wordWrap: 'break-word' }}
+        >
+          <MathRenderer content={displayText} />
+        </div>
+
+        {/* Annotation overlays - multiple per annotation if text spans lines */}
+        {annotationElements.map((elem) =>
+          elem.positions.map((position, posIdx) => (
+            <AnnotationOverlay
+              key={`${elem.id}-${posIdx}`}
+              annotation={elem.annotation}
+              position={position}
+              darkMode={darkMode}
+            />
+          ))
+        )}
+      </div>
     </div>
   );
 }
 
-// ============================================================================
-// Annotation Rendering Functions
-// ============================================================================
-
 /**
- * Main dispatcher for rendering annotations
+ * Find the position of target text within a container
+ * Uses Range API for accurate positioning
+ * Returns array of rectangles (one per line if text spans multiple lines)
  */
-function renderAnnotation(
-  canvas: Canvas,
-  annotation: Annotation,
-  problemTextObj: Text,
-  darkMode: boolean
-): void {
-  switch (annotation.type) {
-    case 'highlight':
-      renderHighlight(canvas, annotation, problemTextObj, darkMode);
-      break;
-    case 'circle':
-      renderCircle(canvas, annotation, problemTextObj, darkMode);
-      break;
-    case 'label':
-      renderLabel(canvas, annotation, problemTextObj, darkMode);
-      break;
-    case 'underline':
-      renderUnderline(canvas, annotation, problemTextObj, darkMode);
-      break;
-    case 'arrow':
-      console.warn('Arrow annotations not yet implemented');
-      break;
-    default:
-      console.warn(`Unknown annotation type: ${(annotation as any).type}`);
-  }
-}
+function findTextPosition(
+  container: HTMLElement,
+  targetText: string
+): { left: number; top: number; width: number; height: number }[] {
+  const text = container.textContent || '';
+  const normalizedTarget = targetText.replace(/\s+/g, '');
+  const normalizedText = text.replace(/\s+/g, '');
 
-/**
- * Render highlight annotation
- */
-function renderHighlight(
-  canvas: Canvas,
-  annotation: Annotation,
-  problemTextObj: Text,
-  darkMode: boolean
-): void {
-  if (annotation.target.mode !== 'text') {
-    console.warn('Highlight only supports text targets');
-    return;
+  // Diagnostic logging
+  console.log('=== findTextPosition Debug ===');
+  console.log('Target text:', targetText);
+  console.log('Normalized target:', normalizedTarget);
+  console.log('Container textContent:', text);
+  console.log('Normalized container text:', normalizedText);
+  console.log('Index found:', normalizedText.indexOf(normalizedTarget));
+
+  const index = normalizedText.indexOf(normalizedTarget);
+  if (index === -1) {
+    console.warn(`Target text "${targetText}" not found`);
+    console.warn('Container textContent was:', text);
+    return [];
   }
 
-  const positions = findTextPositions(
-    problemTextObj,
-    annotation.target.text
-  );
+  // Map normalized index back to original text
+  const startIndex = mapNormalizedToOriginalIndex(text, index);
+  const endIndex = mapNormalizedToOriginalIndex(text, index + normalizedTarget.length);
 
-  if (positions.length === 0) {
-    console.warn(`Text "${annotation.target.text}" not found in problem`);
-    return;
-  }
+  try {
+    // Create a range for the target text
+    const range = document.createRange();
+    const textNode = findTextNode(container, startIndex, endIndex);
 
-  const color = getAnnotationColor(
-    annotation.style?.color || 'yellow',
-    darkMode
-  );
-  const opacity = annotation.style?.opacity ?? 0.3;
-
-  positions.forEach((pos) => {
-    const highlight = new Rect({
-      left: pos.left,
-      top: pos.top,
-      width: pos.width,
-      height: pos.height,
-      fill: color,
-      opacity,
-      selectable: false,
-      evented: false,
-    });
-
-    canvas.add(highlight);
-    canvas.sendObjectToBack(highlight);
-  });
-}
-
-/**
- * Render circle annotation
- */
-function renderCircle(
-  canvas: Canvas,
-  annotation: Annotation,
-  problemTextObj: Text,
-  darkMode: boolean
-): void {
-  if (annotation.target.mode !== 'text') {
-    console.warn('Circle only supports text targets in Phase 1');
-    return;
-  }
-
-  const positions = findTextPositions(
-    problemTextObj,
-    annotation.target.text
-  );
-
-  if (positions.length === 0) {
-    console.warn(`Text "${annotation.target.text}" not found in problem`);
-    return;
-  }
-
-  const requestedColor = annotation.style?.color || 'red';
-  const color = getAnnotationColor(requestedColor, darkMode);
-  const strokeWidth = annotation.style?.strokeWidth ?? 2;
-
-  positions.forEach((pos) => {
-    const padding = 5;
-    const circle = new Ellipse({
-      left: pos.left + pos.width / 2,
-      top: pos.top + pos.height / 2,
-      rx: pos.width / 2 + padding,
-      ry: pos.height / 2 + padding,
-      fill: 'transparent',
-      stroke: color,
-      strokeWidth,
-      selectable: false,
-      evented: false,
-      originX: 'center',
-      originY: 'center',
-    });
-
-    canvas.add(circle);
-  });
-}
-
-/**
- * Render label annotation
- */
-function renderLabel(
-  canvas: Canvas,
-  annotation: any,
-  problemTextObj: Text,
-  darkMode: boolean
-): void {
-  if (annotation.target.mode !== 'text') {
-    console.warn('Label only supports text targets in Phase 1');
-    return;
-  }
-
-  if (!annotation.content) {
-    console.warn('Label annotation missing content');
-    return;
-  }
-
-  const positions = findTextPositions(
-    problemTextObj,
-    annotation.target.text
-  );
-
-  if (positions.length === 0) {
-    console.warn(`Text "${annotation.target.text}" not found in problem`);
-    return;
-  }
-
-  const pos = positions[0];
-
-  const textColor = getAnnotationColor(
-    annotation.style?.color || 'black',
-    darkMode
-  );
-  const fontSize = annotation.style?.fontSize ?? 12;
-  const bgColor =
-    annotation.style?.backgroundColor ||
-    (darkMode ? 'rgba(31, 41, 55, 0.9)' : 'rgba(255, 255, 255, 0.9)');
-
-  const labelText = new Text(annotation.content, {
-    fontSize,
-    fill: textColor,
-    fontFamily: 'Arial, sans-serif',
-  });
-
-  const bgRect = new Rect({
-    width: (labelText.width || 0) + 10,
-    height: (labelText.height || 0) + 6,
-    fill: bgColor,
-    stroke: textColor,
-    strokeWidth: 1,
-    rx: 4,
-    ry: 4,
-  });
-
-  const group = new Group([bgRect, labelText], {
-    left: pos.left + pos.width / 2,
-    top: pos.top - 30,
-    originX: 'center',
-    selectable: false,
-    evented: false,
-  });
-
-  canvas.add(group);
-}
-
-/**
- * Render underline annotation
- */
-function renderUnderline(
-  canvas: Canvas,
-  annotation: Annotation,
-  problemTextObj: Text,
-  darkMode: boolean
-): void {
-  if (annotation.target.mode !== 'text') {
-    console.warn('Underline only supports text targets');
-    return;
-  }
-
-  const positions = findTextPositions(
-    problemTextObj,
-    annotation.target.text
-  );
-
-  if (positions.length === 0) {
-    console.warn(`Text "${annotation.target.text}" not found in problem`);
-    return;
-  }
-
-  const color = getAnnotationColor(
-    annotation.style?.color || 'red',
-    darkMode
-  );
-  const strokeWidth = annotation.style?.strokeWidth ?? 2;
-
-  positions.forEach((pos) => {
-    const line = new Line(
-      [pos.left, pos.top + pos.height + 2, pos.left + pos.width, pos.top + pos.height + 2],
-      {
-        stroke: color,
-        strokeWidth,
-        selectable: false,
-        evented: false,
-      }
-    );
-
-    canvas.add(line);
-  });
-}
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-interface TextPosition {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-}
-
-/**
- * Find all positions of target text within problem text
- * Uses simple exact string matching (no normalization)
- */
-function findTextPositions(
-  textObj: Text,
-  searchText: string
-): TextPosition[] {
-  const problemText = textObj.text || '';
-  const positions: TextPosition[] = [];
-
-  let startIndex = 0;
-
-  // Find all exact matches
-  while (true) {
-    const index = problemText.indexOf(searchText, startIndex);
-
-    if (index === -1) {
-      break; // No more matches
+    if (!textNode) {
+      console.warn('Could not find text node');
+      return [];
     }
 
-    // Calculate position by measuring text before the match
-    const beforeText = problemText.slice(0, index);
+    range.setStart(textNode.node, textNode.start);
+    range.setEnd(textNode.node, textNode.end);
 
-    const beforeObj = new Text(beforeText, {
-      fontSize: textObj.fontSize,
-      fontFamily: textObj.fontFamily,
-    });
+    // Get all bounding rectangles (one per line for multi-line text)
+    const rects = range.getClientRects();
+    const containerRect = container.getBoundingClientRect();
 
-    const matchObj = new Text(searchText, {
-      fontSize: textObj.fontSize,
-      fontFamily: textObj.fontFamily,
-    });
+    console.log(`Found ${rects.length} rectangle(s) for "${targetText}"`);
 
-    positions.push({
-      left: (textObj.left || 0) + (beforeObj.width || 0),
-      top: textObj.top || 0,
-      width: matchObj.width || 0,
-      height: matchObj.height || 0,
-    });
+    // Convert DOMRectList to array of position objects
+    return Array.from(rects).map((rect) => ({
+      left: rect.left - containerRect.left,
+      top: rect.top - containerRect.top,
+      width: rect.width,
+      height: rect.height,
+    }));
+  } catch (error) {
+    console.error('Error finding text position:', error);
+    return [];
+  }
+}
 
-    // Move past this match to find next one
-    startIndex = index + searchText.length;
+/**
+ * Map normalized index (spaces removed) back to original index (with spaces)
+ */
+function mapNormalizedToOriginalIndex(originalText: string, normalizedIndex: number): number {
+  let origIdx = 0;
+  let normIdx = 0;
+
+  while (normIdx < normalizedIndex && origIdx < originalText.length) {
+    if (originalText[origIdx] !== ' ' && originalText[origIdx] !== '\t' && originalText[origIdx] !== '\n') {
+      normIdx++;
+    }
+    origIdx++;
   }
 
-  return positions;
+  return origIdx;
+}
+
+/**
+ * Find the text node containing the target range
+ */
+function findTextNode(
+  container: HTMLElement,
+  startIndex: number,
+  endIndex: number
+): { node: Node; start: number; end: number } | null {
+  let currentIndex = 0;
+
+  function traverse(node: Node): { node: Node; start: number; end: number } | null {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const nodeLength = node.textContent?.length || 0;
+      const nodeStart = currentIndex;
+      const nodeEnd = currentIndex + nodeLength;
+
+      if (startIndex >= nodeStart && endIndex <= nodeEnd) {
+        return {
+          node,
+          start: startIndex - nodeStart,
+          end: endIndex - nodeStart,
+        };
+      }
+
+      currentIndex += nodeLength;
+    } else {
+      for (const child of Array.from(node.childNodes)) {
+        const result = traverse(child);
+        if (result) return result;
+      }
+    }
+
+    return null;
+  }
+
+  return traverse(container);
+}
+
+/**
+ * Annotation overlay component
+ */
+function AnnotationOverlay({
+  annotation,
+  position,
+  darkMode,
+}: {
+  annotation: Annotation;
+  position: { left: number; top: number; width: number; height: number };
+  darkMode: boolean;
+}) {
+  const getAnnotationStyle = (): React.CSSProperties => {
+    const baseStyle: React.CSSProperties = {
+      position: 'absolute',
+      left: position.left,
+      top: position.top,
+      width: position.width,
+      height: position.height,
+      pointerEvents: 'none',
+      transition: 'all 0.2s ease',
+    };
+
+    const color = annotation.style?.color || 'yellow';
+
+    switch (annotation.type) {
+      case 'highlight':
+        return {
+          ...baseStyle,
+          backgroundColor: getColor(color, darkMode),
+          opacity: annotation.style?.opacity ?? 0.3,
+          borderRadius: '2px',
+        };
+
+      case 'circle':
+        return {
+          ...baseStyle,
+          border: `${annotation.style?.strokeWidth ?? 2}px solid ${getColor(color, darkMode)}`,
+          borderRadius: '50%',
+          left: position.left - 5,
+          top: position.top - 5,
+          width: position.width + 10,
+          height: position.height + 10,
+        };
+
+      case 'underline':
+        return {
+          ...baseStyle,
+          borderBottom: `${annotation.style?.strokeWidth ?? 2}px solid ${getColor(color, darkMode)}`,
+          top: position.top + position.height,
+          height: 0,
+        };
+
+      default:
+        return baseStyle;
+    }
+  };
+
+  return <div style={getAnnotationStyle()} />;
 }
 
 /**
  * Get annotation color with dark mode support
  */
-function getAnnotationColor(color: string, darkMode: boolean): string {
+function getColor(color: string, darkMode: boolean): string {
   if (darkMode) {
     const darkModeColors: Record<string, string> = {
       yellow: 'rgba(253, 224, 71, 0.5)',
-      red: 'rgb(239, 68, 68)',      // Brighter, more saturated red
-      blue: 'rgb(59, 130, 246)',     // Brighter, more saturated blue
-      green: 'rgb(34, 197, 94)',     // Brighter green
-      purple: 'rgb(168, 85, 247)',   // Brighter purple
+      red: 'rgb(239, 68, 68)',
+      blue: 'rgb(59, 130, 246)',
+      green: 'rgb(34, 197, 94)',
+      purple: 'rgb(168, 85, 247)',
       black: 'rgb(243, 244, 246)',
     };
-
     return darkModeColors[color] || color;
   }
 
   return color;
+}
+
+/**
+ * Auto-wrap text in \(...\) delimiters if it contains LaTeX commands
+ */
+function autoWrapLatex(text: string): string {
+  // Check if already wrapped in any math delimiters
+  if (text.includes('\\(') || text.includes('$')) {
+    return text;
+  }
+
+  // Check if contains common LaTeX commands
+  const latexCommands = [
+    '\\frac',
+    '\\sqrt',
+    '\\sum',
+    '\\int',
+    '\\prod',
+    '\\alpha',
+    '\\beta',
+    '\\gamma',
+    '\\theta',
+    '\\pi',
+    '\\Delta',
+    '\\infty',
+    '\\leq',
+    '\\geq',
+    '\\neq',
+    '\\cdot',
+    '\\times',
+    '\\div',
+    '\\pm',
+  ];
+
+  const hasLatex = latexCommands.some((cmd) => text.includes(cmd));
+
+  if (hasLatex) {
+    return `\\(${text}\\)`;
+  }
+
+  return text;
 }

@@ -7,15 +7,24 @@ import { useState, useRef, useEffect } from 'react';
 import ProblemInput from './ProblemInput';
 import MessageList from './MessageList';
 import MathRenderer from './MathRenderer';
+import SolutionPathProgress from './SolutionPathProgress';
+import WhiteboardCanvas from './whiteboard/WhiteboardCanvas';
 import type { ConversationState } from '@/types/conversation';
 import type { UIState } from '@/types/ui';
+import type { Annotation } from '@/types/whiteboard';
 import {
   sendMessage,
   getTurnCount,
   shouldWarnAboutLength,
 } from '@/lib/conversation-manager';
 import { getErrorMessage } from '@/lib/error-messages';
-import { generateSimilarProblem, generateHarderProblem } from '@/lib/api-client';
+import { generateSimilarProblem, generateHarderProblem, analyzeProblem } from '@/lib/api-client';
+import {
+  detectStruggleKeywords,
+  updateStruggleState,
+  resetStruggleState,
+  handleStepProgression,
+} from '@/lib/solution-path-manager';
 
 const MAX_MESSAGE_LENGTH = 1000;
 
@@ -37,6 +46,10 @@ export default function ChatInterface() {
       problemStatement: '',
       messages: [],
       masteryLevel: null,
+      solutionPath: undefined,
+      currentApproachIndex: 0,
+      currentStepIndex: 0,
+      struggleState: resetStruggleState(),
     });
 
   // UI state
@@ -78,13 +91,41 @@ export default function ChatInterface() {
     return 'struggling';
   };
 
+  // Get current annotations from most recent tutor message
+  const getCurrentAnnotations = (): Annotation[] => {
+    // Find the most recent tutor message with annotations
+    for (let i = conversationState.messages.length - 1; i >= 0; i--) {
+      const message = conversationState.messages[i];
+      if (message.role === 'tutor' && message.annotations && message.annotations.length > 0) {
+        return message.annotations;
+      }
+    }
+    return [];
+  };
+
+  // Get current equation state from most recent tutor message
+  const getCurrentState = (): string | undefined => {
+    // Find the most recent tutor message with currentState
+    for (let i = conversationState.messages.length - 1; i >= 0; i--) {
+      const message = conversationState.messages[i];
+      if (message.role === 'tutor' && message.currentState) {
+        return message.currentState;
+      }
+    }
+    return undefined;
+  };
+
   // Handle problem submission (start conversation)
   const handleProblemSubmit = async (problem: string) => {
-    // Set initial state with problem
+    // Immediately transition to chat mode with the problem
     setConversationState({
       problemStatement: problem,
       messages: [],
       masteryLevel: null,
+      solutionPath: undefined, // Will be populated in background
+      currentApproachIndex: 0,
+      currentStepIndex: 0,
+      struggleState: resetStruggleState(),
     });
 
     // Create new AbortController for this request
@@ -93,10 +134,28 @@ export default function ChatInterface() {
     setUIState({ ...uiState, isLoading: true, error: null });
 
     try {
-      // Get opening message from AI with empty conversation
+      // Start solution path analysis in background (don't await)
+      let solutionPath: import('@/types/solution-path').SolutionPath | undefined;
+      const pathPromise = analyzeProblem(problem, abortControllerRef.current.signal)
+        .then((path) => {
+          solutionPath = path;
+          console.log(`✅ Solution path generated: ${path.approaches.length} approach(es)`);
+          // Update state with solution path when ready
+          setConversationState((prev) => ({
+            ...prev,
+            solutionPath: path,
+          }));
+        })
+        .catch((pathError: any) => {
+          // Log error but don't fail - can still tutor without path
+          console.warn('⚠️  Failed to generate solution path, continuing without it:', pathError.message);
+        });
+
+      // Get opening message from AI immediately (without waiting for path)
       const { tutorMessage, masteryLevel: aiMasteryLevel } = await sendMessage(
         problem,
         [], // Empty messages array for opening
+        undefined, // No path context yet for opening message
         abortControllerRef.current.signal,
         (attempt) => {
           setRetryAttempt(attempt);
@@ -104,16 +163,17 @@ export default function ChatInterface() {
       );
 
       // Add opening message to conversation
-      // Note: Opening message shouldn't mark as complete, but handle it just in case
       const mastery = tutorMessage.isComplete && aiMasteryLevel ? aiMasteryLevel : null;
 
-      setConversationState({
-        problemStatement: problem,
+      setConversationState((prev) => ({
+        ...prev,
         messages: [tutorMessage],
         masteryLevel: mastery,
-      });
+      }));
       setUIState({ ...uiState, isLoading: false, error: null });
       setRetryAttempt(0);
+
+      // Path will be added to state when promise resolves (non-blocking)
     } catch (error: any) {
       // Don't show error if request was aborted
       if (error.name === 'AbortError') {
@@ -145,6 +205,11 @@ export default function ChatInterface() {
 
     // Add student message to UI immediately (optimistic update)
     const messagesWithStudent = [...conversationState.messages, studentMsg];
+
+    // Detect struggle keywords in student message (hybrid tracking - part 1)
+    const hasStruggleKeywords = detectStruggleKeywords(trimmedMessage);
+
+    // Update conversation state immediately
     setConversationState({
       ...conversationState,
       messages: messagesWithStudent,
@@ -160,9 +225,20 @@ export default function ChatInterface() {
     setRetryAttempt(0);
 
     try {
-      const { tutorMessage, masteryLevel: aiMasteryLevel } = await sendMessage(
+      // Build path context if solution path available
+      const pathContext = conversationState.solutionPath
+        ? {
+            solutionPath: conversationState.solutionPath,
+            approachIndex: conversationState.currentApproachIndex,
+            stepIndex: conversationState.currentStepIndex,
+            struggleLevel: conversationState.struggleState.effectiveStruggleLevel,
+          }
+        : undefined;
+
+      const { tutorMessage, masteryLevel: aiMasteryLevel, stepProgression } = await sendMessage(
         conversationState.problemStatement,
         messagesWithStudent,
+        pathContext,
         abortControllerRef.current.signal,
         (attempt) => {
           // Update retry count in UI
@@ -186,10 +262,48 @@ export default function ChatInterface() {
         }
       }
 
+      // Update struggle state (hybrid tracking - part 2: combine keyword + AI assessment)
+      let newStruggleState = conversationState.struggleState;
+      if (hasStruggleKeywords) {
+        newStruggleState = {
+          ...newStruggleState,
+          keywordStruggleCount: newStruggleState.keywordStruggleCount + 1,
+        };
+      }
+      newStruggleState = updateStruggleState(
+        newStruggleState,
+        trimmedMessage,
+        stepProgression
+      );
+
+      // Handle step progression if solution path exists
+      let newApproachIndex = conversationState.currentApproachIndex;
+      let newStepIndex = conversationState.currentStepIndex;
+
+      if (conversationState.solutionPath && stepProgression) {
+        const progression = handleStepProgression(
+          stepProgression,
+          conversationState.currentApproachIndex,
+          conversationState.currentStepIndex,
+          conversationState.solutionPath
+        );
+
+        if (progression.changed) {
+          newApproachIndex = progression.approachIndex;
+          newStepIndex = progression.stepIndex;
+          // Reset struggle state when advancing to new step
+          newStruggleState = resetStruggleState();
+          console.log(`📈 Advanced to Step ${newStepIndex + 1} of approach ${newApproachIndex}`);
+        }
+      }
+
       setConversationState({
         ...conversationState,
         messages: updatedMessages,
         masteryLevel: mastery,
+        currentApproachIndex: newApproachIndex,
+        currentStepIndex: newStepIndex,
+        struggleState: newStruggleState,
       });
       setUIState({ ...uiState, isLoading: false, error: null });
       setRetryAttempt(0);
@@ -223,6 +337,10 @@ export default function ChatInterface() {
       problemStatement: '',
       messages: [],
       masteryLevel: null,
+      solutionPath: undefined,
+      currentApproachIndex: 0,
+      currentStepIndex: 0,
+      struggleState: resetStruggleState(),
     });
     setMessageInput('');
     setUIState({
@@ -243,14 +361,8 @@ export default function ChatInterface() {
     try {
       const newProblem = await generateSimilarProblem(conversationState.problemStatement);
 
-      // Reset conversation with new problem
-      setConversationState({
-        problemStatement: newProblem,
-        messages: [],
-        masteryLevel: null,
-      });
-      setMessageInput('');
-      setRetryAttempt(0);
+      // Restart with new problem (will trigger solution path analysis)
+      await handleProblemSubmit(newProblem);
     } catch (error: any) {
       const errorMsg = getErrorMessage(error);
       setUIState({
@@ -272,14 +384,8 @@ export default function ChatInterface() {
     try {
       const newProblem = await generateHarderProblem(conversationState.problemStatement);
 
-      // Reset conversation with new problem
-      setConversationState({
-        problemStatement: newProblem,
-        messages: [],
-        masteryLevel: null,
-      });
-      setMessageInput('');
-      setRetryAttempt(0);
+      // Restart with new problem (will trigger solution path analysis)
+      await handleProblemSubmit(newProblem);
     } catch (error: any) {
       const errorMsg = getErrorMessage(error);
       setUIState({
@@ -305,9 +411,9 @@ export default function ChatInterface() {
   // Show chat interface
   return (
     <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Header with problem, turn counter and buttons */}
+      {/* Header with turn counter and buttons */}
       <div className="card-bg border-b border-secondary px-6 py-4">
-        <div className="flex justify-between items-start mb-3">
+        <div className="flex justify-between items-start">
           <div className="flex-1">
             <h2 className="text-lg font-semibold text-heading">
               Socrates Math Tutor
@@ -364,14 +470,30 @@ export default function ChatInterface() {
           </button>
           </div>
         </div>
+      </div>
 
-        {/* Problem statement */}
-        <div className="card-secondary-bg rounded-lg p-3 mt-2">
-          <h3 className="text-xs font-medium text-secondary mb-1">Problem:</h3>
-          <div className="text-primary">
-            <MathRenderer content={conversationState.problemStatement} />
-          </div>
+      {/* Problem Display */}
+      <div className="card-secondary-bg border-b border-secondary px-6 py-4">
+        <div className="flex items-center justify-center mb-2">
+          <h3 className="text-xs font-medium text-secondary">Problem</h3>
+          {conversationState.solutionPath && (
+            <div className="mx-auto animate-fade-in">
+              <SolutionPathProgress
+                solutionPath={conversationState.solutionPath}
+                currentApproachIndex={conversationState.currentApproachIndex}
+                currentStepIndex={conversationState.currentStepIndex}
+                masteryLevel={conversationState.masteryLevel}
+                darkMode={darkMode}
+              />
+            </div>
+          )}
         </div>
+        <WhiteboardCanvas
+          problemText={conversationState.problemStatement}
+          currentState={getCurrentState()}
+          annotations={getCurrentAnnotations()}
+          darkMode={darkMode}
+        />
       </div>
 
       {/* Message list */}
@@ -380,6 +502,7 @@ export default function ChatInterface() {
         problemStatement={conversationState.problemStatement}
         isLoading={uiState.isLoading}
         darkMode={darkMode}
+        showWhiteboards={false}
       />
 
       {/* Input area */}

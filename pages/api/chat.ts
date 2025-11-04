@@ -7,7 +7,9 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import OpenAI from 'openai';
 import { buildSystemPrompt } from '@/prompts/socratic-tutor';
 import type { ChatRequest, ChatResponse, ErrorResponse } from '@/types/api';
+import type { SolutionPath } from '@/types/solution-path';
 import { parseWithFallback, sanitizeResponse, hasValidAnnotations } from '@/lib/annotation-validator';
+import { getCurrentStep, getCurrentApproach, getHintForStruggleLevel } from '@/lib/solution-path-manager';
 
 // CORS allowlist
 const ALLOWED_ORIGINS = [
@@ -43,12 +45,13 @@ export default async function handler(
   }
 
   try {
-    const { problem, messages } = req.body as ChatRequest;
+    const { problem, messages, pathContext } = req.body as ChatRequest;
 
     // Debug logging
     console.log('=== API Request Debug ===');
     console.log('Problem:', problem);
     console.log('Messages:', JSON.stringify(messages, null, 2));
+    console.log('Path Context:', pathContext ? `Step ${pathContext.stepIndex + 1}, Struggle Level ${pathContext.struggleLevel}` : 'None');
     console.log('========================');
 
     // Input validation
@@ -86,8 +89,35 @@ export default async function handler(
       }
     }
 
+    // Build path context for prompt if available
+    let promptPathContext: Parameters<typeof buildSystemPrompt>[1] | undefined;
+    if (pathContext && pathContext.solutionPath) {
+      const approach = getCurrentApproach(pathContext.solutionPath, pathContext.approachIndex);
+      const step = getCurrentStep(pathContext.solutionPath, pathContext.approachIndex, pathContext.stepIndex);
+
+      if (approach && step) {
+        const hint = getHintForStruggleLevel(step, pathContext.struggleLevel);
+        const nextStep = pathContext.stepIndex + 1 < approach.steps.length
+          ? approach.steps[pathContext.stepIndex + 1]
+          : undefined;
+
+        promptPathContext = {
+          approachName: approach.name,
+          currentStep: step.action,
+          stepReasoning: step.reasoning,
+          stepNumber: step.stepNumber,
+          totalSteps: approach.steps.length,
+          hint,
+          struggleLevel: pathContext.struggleLevel,
+          keyConcepts: step.keyConcepts,
+          commonMistakes: step.commonMistakes,
+          nextStepPreview: nextStep?.action,
+        };
+      }
+    }
+
     // Build system prompt
-    const systemPrompt = buildSystemPrompt(problem);
+    const systemPrompt = buildSystemPrompt(problem, promptPathContext);
 
     // Format messages for OpenAI API
     const openaiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
@@ -101,12 +131,13 @@ export default async function handler(
       })),
     ];
 
-    // Call OpenAI API
+    // Call OpenAI API with forced JSON response format
     const response = await openai.chat.completions.create({
       model: process.env.LLM_MODEL || 'gpt-4o',
       max_tokens: parseInt(process.env.LLM_MAX_TOKENS || '500'),
       temperature: parseFloat(process.env.LLM_TEMPERATURE || '0.4'),
       messages: openaiMessages,
+      response_format: { type: "json_object" }, // Force JSON mode
     });
 
     // Extract response text
@@ -128,15 +159,27 @@ export default async function handler(
       console.log('📝 Text-only response (no annotations)');
     }
 
+    if (sanitized.currentState) {
+      console.log(`📊 CurrentState: "${sanitized.currentState}"`);
+    } else {
+      console.log('⚠️  No currentState in response');
+    }
+
     if (sanitized.isComplete) {
       console.log(`🎉 Problem marked as complete (mastery: ${sanitized.masteryLevel || 'not specified'})`);
+    }
+
+    if (sanitized.stepProgression) {
+      console.log(`📊 Step Progression: ${sanitized.stepProgression.currentStepCompleted ? 'Step Complete' : 'In Progress'}, Struggling: ${sanitized.stepProgression.studentStrugglingOnCurrentStep ? 'Yes' : 'No'}`);
     }
 
     return res.status(200).json({
       response: sanitized.message,
       annotations: sanitized.annotations || [],
+      currentState: sanitized.currentState,
       isComplete: sanitized.isComplete,
       masteryLevel: sanitized.masteryLevel,
+      stepProgression: sanitized.stepProgression,
     });
   } catch (error: any) {
     // Log full error server-side

@@ -14,18 +14,26 @@ const BASE_DELAY = 500; // ms
 
 /**
  * Send chat message to tutor with retry logic
- * Returns message, annotations, and completion status
+ * Returns message, annotations, completion status, and step progression
  */
 export async function chatWithTutor(
   problem: string,
   messages: Message[],
+  pathContext?: {
+    solutionPath: import('@/types/solution-path').SolutionPath;
+    approachIndex: number;
+    stepIndex: number;
+    struggleLevel: number;
+  },
   signal?: AbortSignal,
   onRetry?: (attempt: number) => void
 ): Promise<{
   message: string;
   annotations?: Annotation[];
+  currentState?: string;
   isComplete?: boolean;
   masteryLevel?: MasteryLevel;
+  stepProgression?: import('@/types/solution-path').StepProgression;
 }> {
   return await exponentialBackoff(
     async () => {
@@ -37,6 +45,7 @@ export async function chatWithTutor(
         body: JSON.stringify({
           problem,
           messages,
+          pathContext,
         }),
         signal, // Pass AbortSignal for cancellation
       });
@@ -52,8 +61,10 @@ export async function chatWithTutor(
       return {
         message: data.response,
         annotations: data.annotations,
+        currentState: data.currentState,
         isComplete: data.isComplete,
         masteryLevel: data.masteryLevel,
+        stepProgression: data.stepProgression,
       };
     },
     onRetry
@@ -155,6 +166,40 @@ export async function generateHarderProblem(
 
       const data = await response.json();
       return data.problem;
+    }
+  );
+}
+
+/**
+ * Analyze problem and generate solution path
+ * Returns solution path with multiple approaches and step-by-step guidance
+ */
+export async function analyzeProblem(
+  problem: string,
+  signal?: AbortSignal
+): Promise<import('@/types/solution-path').SolutionPath> {
+  return await exponentialBackoff(
+    async () => {
+      const response = await fetch('/api/analyze-problem', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          problem,
+        }),
+        signal,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        const error: any = new Error(errorData.error || 'Failed to analyze problem');
+        error.status = response.status;
+        throw error;
+      }
+
+      const data = await response.json();
+      return data.solutionPath;
     }
   );
 }

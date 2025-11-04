@@ -16,9 +16,10 @@ const WhiteboardCanvas = dynamic(
 
 interface MessageListProps {
   messages: Message[];
-  problemStatement: string;  // Still needed for WhiteboardCanvas
+  problemStatement: string;  // Still needed for WhiteboardCanvas (when showWhiteboards=true)
   isLoading?: boolean;
   darkMode?: boolean;  // For whiteboard color adaptation
+  showWhiteboards?: boolean;  // Whether to render per-message whiteboards
 }
 
 export default function MessageList({
@@ -26,6 +27,7 @@ export default function MessageList({
   problemStatement,
   isLoading = false,
   darkMode = false,
+  showWhiteboards = true,
 }: MessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -60,8 +62,8 @@ export default function MessageList({
               </div>
               <MathRenderer content={msg.content} />
 
-              {/* NEW: Render whiteboard annotations for tutor messages */}
-              {msg.role === 'tutor' && msg.annotations && msg.annotations.length > 0 && (
+              {/* Render whiteboard annotations for tutor messages (only if showWhiteboards is true) */}
+              {showWhiteboards && msg.role === 'tutor' && msg.annotations && msg.annotations.length > 0 && (
                 <WhiteboardCanvas
                   problemText={problemStatement}
                   annotations={msg.annotations}

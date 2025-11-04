@@ -152,6 +152,7 @@ export type MasteryLevel = 'mastered' | 'competent' | 'struggling';
 export interface TutorResponse {
   message: string; // Socratic dialogue
   annotations?: Annotation[]; // Visual annotations (optional)
+  currentState?: string; // Current equation state after student's work (e.g., "2x = 8")
   animationSequence?: AnimationStep[]; // Phase 2 feature
   isComplete?: boolean; // Has the student completed the problem?
   masteryLevel?: MasteryLevel; // AI's assessment of student understanding
