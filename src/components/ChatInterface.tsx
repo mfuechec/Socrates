@@ -279,22 +279,33 @@ export default function ChatInterface() {
           >
             {darkMode ? '☀️' : '🌙'}
           </button>
-          <button
-            onClick={handleGenerateSimilar}
-            disabled={isGeneratingSimilar}
-            className="btn-secondary"
-            title="Generate a similar practice problem"
-          >
-            {isGeneratingSimilar ? 'Generating...' : 'Similar Problem'}
-          </button>
-          <button
-            onClick={handleGenerateHarder}
-            disabled={isGeneratingHarder}
-            className="btn-secondary"
-            title="Generate a harder problem to challenge yourself"
-          >
-            {isGeneratingHarder ? 'Generating...' : 'Harder Problem'}
-          </button>
+
+          {/* Show Similar Problem for struggling or competent students */}
+          {(conversationState.masteryLevel === 'struggling' ||
+            conversationState.masteryLevel === 'competent') && (
+            <button
+              onClick={handleGenerateSimilar}
+              disabled={isGeneratingSimilar}
+              className="btn-secondary"
+              title="Generate a similar practice problem"
+            >
+              {isGeneratingSimilar ? 'Generating...' : 'Similar Problem'}
+            </button>
+          )}
+
+          {/* Show Harder Problem for mastered or competent students */}
+          {(conversationState.masteryLevel === 'mastered' ||
+            conversationState.masteryLevel === 'competent') && (
+            <button
+              onClick={handleGenerateHarder}
+              disabled={isGeneratingHarder}
+              className="btn-secondary"
+              title="Generate a harder problem to challenge yourself"
+            >
+              {isGeneratingHarder ? 'Generating...' : 'Harder Problem'}
+            </button>
+          )}
+
           <button
             onClick={handleReset}
             className="btn-secondary"
