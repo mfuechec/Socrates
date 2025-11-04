@@ -9,7 +9,7 @@
 
 export type AnnotationType = 'highlight' | 'circle' | 'arrow' | 'label' | 'underline';
 
-export interface Annotation {
+export interface BaseAnnotation {
   id?: string; // Auto-generated client-side
   type: AnnotationType;
   target: AnnotationTarget;
@@ -109,31 +109,39 @@ export interface AnnotationMetadata {
 // Specific Annotation Type Interfaces
 // ============================================================================
 
-export interface HighlightAnnotation extends Annotation {
+export interface HighlightAnnotation extends BaseAnnotation {
   type: 'highlight';
   target: TextTarget;
 }
 
-export interface CircleAnnotation extends Annotation {
+export interface CircleAnnotation extends BaseAnnotation {
   type: 'circle';
   target: TextTarget | CoordinateTarget;
 }
 
-export interface ArrowAnnotation extends Annotation {
+export interface ArrowAnnotation extends BaseAnnotation {
   type: 'arrow';
   target: ArrowTarget;
 }
 
-export interface LabelAnnotation extends Annotation {
+export interface LabelAnnotation extends BaseAnnotation {
   type: 'label';
   target: TextTarget | CoordinateTarget;
   content: string; // Label text
 }
 
-export interface UnderlineAnnotation extends Annotation {
+export interface UnderlineAnnotation extends BaseAnnotation {
   type: 'underline';
   target: TextTarget;
 }
+
+// Discriminated union of all annotation types
+export type Annotation =
+  | HighlightAnnotation
+  | CircleAnnotation
+  | ArrowAnnotation
+  | LabelAnnotation
+  | UnderlineAnnotation;
 
 // ============================================================================
 // Tutor Response (Enhanced)
