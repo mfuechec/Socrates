@@ -14,12 +14,13 @@ import {
   shouldWarnAboutLength,
 } from '@/lib/conversation-manager';
 import { getErrorMessage } from '@/lib/error-messages';
+import { generateSimilarProblem, generateHarderProblem } from '@/lib/api-client';
 
 const MAX_MESSAGE_LENGTH = 1000;
 
 export default function ChatInterface() {
   // Dark mode state
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(true);
 
   // Apply dark mode class to document
   useEffect(() => {
@@ -34,6 +35,7 @@ export default function ChatInterface() {
     useState<ConversationState>({
       problemStatement: '',
       messages: [],
+      masteryLevel: null,
     });
 
   // UI state
@@ -42,6 +44,12 @@ export default function ChatInterface() {
     error: null,
     imagePreviewUrl: null,
   });
+
+  // Generating similar problem state
+  const [isGeneratingSimilar, setIsGeneratingSimilar] = useState(false);
+
+  // Generating harder problem state
+  const [isGeneratingHarder, setIsGeneratingHarder] = useState(false);
 
   // Retry state
   const [retryAttempt, setRetryAttempt] = useState<number>(0);
@@ -62,11 +70,19 @@ export default function ChatInterface() {
     }
   }, [uiState.isLoading, conversationState.messages.length]);
 
+  // Calculate mastery level based on turn count
+  const calculateMastery = (turnCount: number): import('@/types/conversation').MasteryLevel => {
+    if (turnCount <= 3) return 'mastered';
+    if (turnCount <= 6) return 'competent';
+    return 'struggling';
+  };
+
   // Handle problem submission (start conversation)
   const handleProblemSubmit = (problem: string) => {
     setConversationState({
       problemStatement: problem,
       messages: [],
+      masteryLevel: null,
     });
   };
 
@@ -112,9 +128,19 @@ export default function ChatInterface() {
       );
 
       // Add tutor response to messages
+      const updatedMessages = [...messagesWithStudent, tutorMessage];
+      const currentTurnCount = getTurnCount(updatedMessages);
+
+      // Calculate mastery level when problem appears to be complete
+      // (AI will say things like "correct!" or "you've solved it")
+      const isComplete = tutorMessage.content.toLowerCase().includes('correct!') ||
+                        tutorMessage.content.toLowerCase().includes("you've solved it");
+      const mastery = isComplete ? calculateMastery(currentTurnCount) : conversationState.masteryLevel;
+
       setConversationState({
         ...conversationState,
-        messages: [...messagesWithStudent, tutorMessage],
+        messages: updatedMessages,
+        masteryLevel: mastery,
       });
       setUIState({ ...uiState, isLoading: false, error: null });
       setRetryAttempt(0);
@@ -147,6 +173,7 @@ export default function ChatInterface() {
     setConversationState({
       problemStatement: '',
       messages: [],
+      masteryLevel: null,
     });
     setMessageInput('');
     setUIState({
@@ -155,6 +182,64 @@ export default function ChatInterface() {
       imagePreviewUrl: null,
     });
     setRetryAttempt(0);
+  };
+
+  // Handle generate similar problem
+  const handleGenerateSimilar = async () => {
+    if (isGeneratingSimilar) return;
+
+    setIsGeneratingSimilar(true);
+    setUIState({ ...uiState, error: null });
+
+    try {
+      const newProblem = await generateSimilarProblem(conversationState.problemStatement);
+
+      // Reset conversation with new problem
+      setConversationState({
+        problemStatement: newProblem,
+        messages: [],
+        masteryLevel: null,
+      });
+      setMessageInput('');
+      setRetryAttempt(0);
+    } catch (error: any) {
+      const errorMsg = getErrorMessage(error);
+      setUIState({
+        ...uiState,
+        error: errorMsg,
+      });
+    } finally {
+      setIsGeneratingSimilar(false);
+    }
+  };
+
+  // Handle generate harder problem
+  const handleGenerateHarder = async () => {
+    if (isGeneratingHarder) return;
+
+    setIsGeneratingHarder(true);
+    setUIState({ ...uiState, error: null });
+
+    try {
+      const newProblem = await generateHarderProblem(conversationState.problemStatement);
+
+      // Reset conversation with new problem
+      setConversationState({
+        problemStatement: newProblem,
+        messages: [],
+        masteryLevel: null,
+      });
+      setMessageInput('');
+      setRetryAttempt(0);
+    } catch (error: any) {
+      const errorMsg = getErrorMessage(error);
+      setUIState({
+        ...uiState,
+        error: errorMsg,
+      });
+    } finally {
+      setIsGeneratingHarder(false);
+    }
   };
 
   const turnCount = getTurnCount(conversationState.messages);
@@ -193,6 +278,22 @@ export default function ChatInterface() {
             title={darkMode ? 'Light mode' : 'Dark mode'}
           >
             {darkMode ? '☀️' : '🌙'}
+          </button>
+          <button
+            onClick={handleGenerateSimilar}
+            disabled={isGeneratingSimilar}
+            className="btn-secondary"
+            title="Generate a similar practice problem"
+          >
+            {isGeneratingSimilar ? 'Generating...' : 'Similar Problem'}
+          </button>
+          <button
+            onClick={handleGenerateHarder}
+            disabled={isGeneratingHarder}
+            className="btn-secondary"
+            title="Generate a harder problem to challenge yourself"
+          >
+            {isGeneratingHarder ? 'Generating...' : 'Harder Problem'}
           </button>
           <button
             onClick={handleReset}

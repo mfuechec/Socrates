@@ -2,6 +2,8 @@
  * Conversation state types
  */
 
+export type MasteryLevel = 'struggling' | 'competent' | 'mastered' | null;
+
 export interface Message {
   role: 'student' | 'tutor';
   content: string;
@@ -11,4 +13,5 @@ export interface Message {
 export interface ConversationState {
   problemStatement: string;
   messages: Message[];
+  masteryLevel: MasteryLevel;
 }

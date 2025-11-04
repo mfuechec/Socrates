@@ -82,6 +82,72 @@ export async function extractProblemFromImage(
 }
 
 /**
+ * Generate a similar problem based on the original
+ */
+export async function generateSimilarProblem(
+  originalProblem: string,
+  signal?: AbortSignal
+): Promise<string> {
+  return await exponentialBackoff(
+    async () => {
+      const response = await fetch('/api/generate-similar', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          originalProblem,
+        }),
+        signal,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        const error: any = new Error(errorData.error || 'Failed to generate similar problem');
+        error.status = response.status;
+        throw error;
+      }
+
+      const data = await response.json();
+      return data.problem;
+    }
+  );
+}
+
+/**
+ * Generate a harder problem that builds on the original
+ */
+export async function generateHarderProblem(
+  originalProblem: string,
+  signal?: AbortSignal
+): Promise<string> {
+  return await exponentialBackoff(
+    async () => {
+      const response = await fetch('/api/generate-harder', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          originalProblem,
+        }),
+        signal,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        const error: any = new Error(errorData.error || 'Failed to generate harder problem');
+        error.status = response.status;
+        throw error;
+      }
+
+      const data = await response.json();
+      return data.problem;
+    }
+  );
+}
+
+/**
  * Exponential backoff retry logic
  */
 async function exponentialBackoff<T>(
