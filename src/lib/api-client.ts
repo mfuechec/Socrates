@@ -5,6 +5,7 @@
 
 import type { Message } from '@/types/conversation';
 import type { ChatResponse, VisionResponse } from '@/types/api';
+import type { Annotation, MasteryLevel } from '@/types/whiteboard';
 
 // Retry configuration
 const RETRYABLE_STATUS_CODES = [500, 429, 503];
@@ -13,13 +14,19 @@ const BASE_DELAY = 500; // ms
 
 /**
  * Send chat message to tutor with retry logic
+ * Returns message, annotations, and completion status
  */
 export async function chatWithTutor(
   problem: string,
   messages: Message[],
   signal?: AbortSignal,
   onRetry?: (attempt: number) => void
-): Promise<string> {
+): Promise<{
+  message: string;
+  annotations?: Annotation[];
+  isComplete?: boolean;
+  masteryLevel?: MasteryLevel;
+}> {
   return await exponentialBackoff(
     async () => {
       const response = await fetch('/api/chat', {
@@ -42,7 +49,12 @@ export async function chatWithTutor(
       }
 
       const data: ChatResponse = await response.json();
-      return data.response;
+      return {
+        message: data.response,
+        annotations: data.annotations,
+        isComplete: data.isComplete,
+        masteryLevel: data.masteryLevel,
+      };
     },
     onRetry
   );

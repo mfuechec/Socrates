@@ -7,6 +7,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import OpenAI from 'openai';
 import { buildSystemPrompt } from '@/prompts/socratic-tutor';
 import type { ChatRequest, ChatResponse, ErrorResponse } from '@/types/api';
+import { parseWithFallback, sanitizeResponse, hasValidAnnotations } from '@/lib/annotation-validator';
 
 // CORS allowlist
 const ALLOWED_ORIGINS = [
@@ -114,8 +115,28 @@ export default async function handler(
       throw new Error('No response content from OpenAI');
     }
 
+    // Try to parse as JSON (with fallback to plain text)
+    const parsed = parseWithFallback(responseText);
+
+    // Sanitize annotations (remove invalid ones)
+    const sanitized = sanitizeResponse(parsed);
+
+    // Log response status
+    if (hasValidAnnotations(sanitized)) {
+      console.log(`✅ Response includes ${sanitized.annotations?.length} annotation(s)`);
+    } else {
+      console.log('📝 Text-only response (no annotations)');
+    }
+
+    if (sanitized.isComplete) {
+      console.log(`🎉 Problem marked as complete (mastery: ${sanitized.masteryLevel || 'not specified'})`);
+    }
+
     return res.status(200).json({
-      response: responseText,
+      response: sanitized.message,
+      annotations: sanitized.annotations || [],
+      isComplete: sanitized.isComplete,
+      masteryLevel: sanitized.masteryLevel,
     });
   } catch (error: any) {
     // Log full error server-side

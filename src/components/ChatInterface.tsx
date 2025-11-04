@@ -6,6 +6,7 @@
 import { useState, useRef, useEffect } from 'react';
 import ProblemInput from './ProblemInput';
 import MessageList from './MessageList';
+import MathRenderer from './MathRenderer';
 import type { ConversationState } from '@/types/conversation';
 import type { UIState } from '@/types/ui';
 import {
@@ -78,12 +79,54 @@ export default function ChatInterface() {
   };
 
   // Handle problem submission (start conversation)
-  const handleProblemSubmit = (problem: string) => {
+  const handleProblemSubmit = async (problem: string) => {
+    // Set initial state with problem
     setConversationState({
       problemStatement: problem,
       messages: [],
       masteryLevel: null,
     });
+
+    // Create new AbortController for this request
+    abortControllerRef.current = new AbortController();
+
+    setUIState({ ...uiState, isLoading: true, error: null });
+
+    try {
+      // Get opening message from AI with empty conversation
+      const { tutorMessage, masteryLevel: aiMasteryLevel } = await sendMessage(
+        problem,
+        [], // Empty messages array for opening
+        abortControllerRef.current.signal,
+        (attempt) => {
+          setRetryAttempt(attempt);
+        }
+      );
+
+      // Add opening message to conversation
+      // Note: Opening message shouldn't mark as complete, but handle it just in case
+      const mastery = tutorMessage.isComplete && aiMasteryLevel ? aiMasteryLevel : null;
+
+      setConversationState({
+        problemStatement: problem,
+        messages: [tutorMessage],
+        masteryLevel: mastery,
+      });
+      setUIState({ ...uiState, isLoading: false, error: null });
+      setRetryAttempt(0);
+    } catch (error: any) {
+      // Don't show error if request was aborted
+      if (error.name === 'AbortError') {
+        return;
+      }
+
+      const errorMsg = getErrorMessage(error);
+      setUIState({
+        ...uiState,
+        isLoading: false,
+        error: errorMsg,
+      });
+    }
   };
 
   // Handle sending a student message
@@ -117,7 +160,7 @@ export default function ChatInterface() {
     setRetryAttempt(0);
 
     try {
-      const { tutorMessage } = await sendMessage(
+      const { tutorMessage, masteryLevel: aiMasteryLevel } = await sendMessage(
         conversationState.problemStatement,
         messagesWithStudent,
         abortControllerRef.current.signal,
@@ -129,13 +172,19 @@ export default function ChatInterface() {
 
       // Add tutor response to messages
       const updatedMessages = [...messagesWithStudent, tutorMessage];
-      const currentTurnCount = getTurnCount(updatedMessages);
 
-      // Calculate mastery level when problem appears to be complete
-      // (AI will say things like "correct!" or "you've solved it")
-      const isComplete = tutorMessage.content.toLowerCase().includes('correct!') ||
-                        tutorMessage.content.toLowerCase().includes("you've solved it");
-      const mastery = isComplete ? calculateMastery(currentTurnCount) : conversationState.masteryLevel;
+      // Determine mastery level
+      let mastery = conversationState.masteryLevel;
+
+      if (tutorMessage.isComplete) {
+        // Use AI's assessment if provided, otherwise fall back to turn count
+        if (aiMasteryLevel) {
+          mastery = aiMasteryLevel;
+        } else {
+          const currentTurnCount = getTurnCount(updatedMessages);
+          mastery = calculateMastery(currentTurnCount);
+        }
+      }
 
       setConversationState({
         ...conversationState,
@@ -256,22 +305,23 @@ export default function ChatInterface() {
   // Show chat interface
   return (
     <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Header with turn counter and reset button */}
-      <div className="card-bg border-b border-secondary px-6 py-4 flex justify-between items-center">
-        <div>
-          <h2 className="text-lg font-semibold text-heading">
-            Socrates Math Tutor
-          </h2>
-          <p className="text-sm text-secondary">
-            Turn {turnCount}
-            {showLengthWarning && (
-              <span className="ml-2 text-yellow-600 dark:text-yellow-500 font-medium">
-                ⚠ Consider starting a new problem
-              </span>
-            )}
-          </p>
-        </div>
-        <div className="flex gap-2">
+      {/* Header with problem, turn counter and buttons */}
+      <div className="card-bg border-b border-secondary px-6 py-4">
+        <div className="flex justify-between items-start mb-3">
+          <div className="flex-1">
+            <h2 className="text-lg font-semibold text-heading">
+              Socrates Math Tutor
+            </h2>
+            <p className="text-sm text-secondary">
+              Turn {turnCount}
+              {showLengthWarning && (
+                <span className="ml-2 text-yellow-600 dark:text-yellow-500 font-medium">
+                  ⚠ Consider starting a new problem
+                </span>
+              )}
+            </p>
+          </div>
+          <div className="flex gap-2">
           <button
             onClick={() => setDarkMode(!darkMode)}
             className="btn-secondary"
@@ -312,6 +362,15 @@ export default function ChatInterface() {
           >
             New Problem
           </button>
+          </div>
+        </div>
+
+        {/* Problem statement */}
+        <div className="card-secondary-bg rounded-lg p-3 mt-2">
+          <h3 className="text-xs font-medium text-secondary mb-1">Problem:</h3>
+          <div className="text-primary">
+            <MathRenderer content={conversationState.problemStatement} />
+          </div>
         </div>
       </div>
 
@@ -320,6 +379,7 @@ export default function ChatInterface() {
         messages={conversationState.messages}
         problemStatement={conversationState.problemStatement}
         isLoading={uiState.isLoading}
+        darkMode={darkMode}
       />
 
       {/* Input area */}

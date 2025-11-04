@@ -4,19 +4,28 @@
  */
 
 import { useEffect, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import type { Message } from '@/types/conversation';
 import MathRenderer from './MathRenderer';
 
+// Import WhiteboardCanvas as client-only (Fabric.js needs browser APIs)
+const WhiteboardCanvas = dynamic(
+  () => import('./whiteboard/WhiteboardCanvas'),
+  { ssr: false }
+);
+
 interface MessageListProps {
   messages: Message[];
-  problemStatement: string;
+  problemStatement: string;  // Still needed for WhiteboardCanvas
   isLoading?: boolean;
+  darkMode?: boolean;  // For whiteboard color adaptation
 }
 
 export default function MessageList({
   messages,
   problemStatement,
   isLoading = false,
+  darkMode = false,
 }: MessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -30,14 +39,6 @@ export default function MessageList({
 
   return (
     <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-6">
-      {/* Problem statement header */}
-      <div className="card-secondary-bg rounded-lg p-4 mb-6 sticky top-0 shadow-sm">
-        <h3 className="text-sm font-medium text-secondary mb-1">Problem:</h3>
-        <div className="text-primary">
-          <MathRenderer content={problemStatement} />
-        </div>
-      </div>
-
       {/* Messages */}
       <div className="space-y-4">
         {messages.map((msg, idx) => (
@@ -58,6 +59,16 @@ export default function MessageList({
                 {msg.role === 'student' ? 'You' : 'Socrates'}
               </div>
               <MathRenderer content={msg.content} />
+
+              {/* NEW: Render whiteboard annotations for tutor messages */}
+              {msg.role === 'tutor' && msg.annotations && msg.annotations.length > 0 && (
+                <WhiteboardCanvas
+                  problemText={problemStatement}
+                  annotations={msg.annotations}
+                  darkMode={darkMode}
+                />
+              )}
+
               <div className="text-xs opacity-75 mt-1">
                 {msg.timestamp.toLocaleTimeString([], {
                   hour: '2-digit',

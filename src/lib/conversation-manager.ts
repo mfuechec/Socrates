@@ -15,23 +15,28 @@ export async function sendMessage(
   messages: Message[],
   signal?: AbortSignal,
   onRetry?: (attempt: number) => void
-): Promise<{ tutorMessage: Message }> {
-  // Get tutor response
-  const tutorResponseText = await chatWithTutor(
+): Promise<{ tutorMessage: Message; masteryLevel?: import('@/types/whiteboard').MasteryLevel }> {
+  // Get tutor response (includes message, annotations, and completion status)
+  const tutorResponse = await chatWithTutor(
     problemStatement,
     messages,
     signal,
     onRetry
   );
 
-  // Create tutor message
+  // Create tutor message with all metadata
   const tutorMsg: Message = {
     role: 'tutor',
-    content: tutorResponseText,
+    content: tutorResponse.message,
+    annotations: tutorResponse.annotations,
+    isComplete: tutorResponse.isComplete,
     timestamp: new Date(),
   };
 
-  return { tutorMessage: tutorMsg };
+  return {
+    tutorMessage: tutorMsg,
+    masteryLevel: tutorResponse.masteryLevel,
+  };
 }
 
 /**

@@ -2,6 +2,8 @@
  * API request and response types
  */
 
+import type { Annotation, MasteryLevel } from './whiteboard';
+
 export interface Message {
   role: 'student' | 'tutor';
   content: string;
@@ -15,6 +17,9 @@ export interface ChatRequest {
 
 export interface ChatResponse {
   response: string;
+  annotations?: Annotation[];
+  isComplete?: boolean;
+  masteryLevel?: MasteryLevel;
 }
 
 export interface VisionResponse {
