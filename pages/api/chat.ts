@@ -14,6 +14,7 @@ import { getCurrentStep, getCurrentApproach, getHintForStruggleLevel } from '@/l
 // CORS allowlist
 const ALLOWED_ORIGINS = [
   'http://localhost:3000',
+  'http://localhost:3001',
   process.env.NEXT_PUBLIC_VERCEL_URL
     ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
     : null,
@@ -130,6 +131,13 @@ export default async function handler(
         content: msg.content,
       })),
     ];
+
+    // Log API key being used (masked for security)
+    const apiKey = process.env.OPENAI_API_KEY || '';
+    const maskedKey = apiKey.length > 14
+      ? `${apiKey.slice(0, 10)}...${apiKey.slice(-4)}`
+      : 'NOT_SET';
+    console.log('[API Key Check]', maskedKey);
 
     // Call OpenAI API with forced JSON response format
     const response = await openai.chat.completions.create({

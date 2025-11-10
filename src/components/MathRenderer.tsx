@@ -6,9 +6,8 @@
  */
 
 import { Fragment } from 'react';
+import katex from 'katex';
 import 'katex/dist/katex.min.css';
-// @ts-ignore - react-katex types may be incomplete
-import { InlineMath, BlockMath } from 'react-katex';
 
 interface MathRendererProps {
   content: string;
@@ -34,24 +33,32 @@ export default function MathRenderer({ content }: MathRendererProps) {
             </Fragment>
           );
         } else if (part.type === 'inline') {
-          // Inline math: $...$
+          // Inline math: \(...\)
           try {
-            return <InlineMath key={idx} math={part.content} />;
+            const html = katex.renderToString(part.content, {
+              displayMode: false,
+              throwOnError: true,
+              trust: false,
+            });
+            return <span key={idx} dangerouslySetInnerHTML={{ __html: html }} />;
           } catch (error) {
             console.error('KaTeX inline math error:', error);
             return (
               <span key={idx} className="katex-error" title="Math rendering failed">
-                ${part.content}$
+                \({part.content}\)
               </span>
             );
           }
         } else if (part.type === 'block') {
-          // Block math: $$...$$
+          // Block math: $$...$$ or \[...\]
           try {
+            const html = katex.renderToString(part.content, {
+              displayMode: true,
+              throwOnError: true,
+              trust: false,
+            });
             return (
-              <div key={idx} className="my-3">
-                <BlockMath math={part.content} />
-              </div>
+              <div key={idx} className="my-3" dangerouslySetInnerHTML={{ __html: html }} />
             );
           } catch (error) {
             console.error('KaTeX block math error:', error);

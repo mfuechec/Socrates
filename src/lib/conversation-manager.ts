@@ -8,6 +8,20 @@ import type { Message, ConversationState } from '@/types/conversation';
 import type { StepProgression } from '@/types/solution-path';
 
 /**
+ * Sanitize message content to prevent excessive whitespace
+ * - Collapse 3+ consecutive newlines to maximum of 2
+ * - Trim leading/trailing whitespace
+ * - Preserve intentional paragraph breaks (2 newlines)
+ */
+function sanitizeContent(content: string): string {
+  return content
+    .trim() // Remove leading/trailing whitespace
+    .replace(/\n{3,}/g, '\n\n') // Collapse 3+ newlines to 2 (allow paragraph breaks)
+    .replace(/[ \t]+\n/g, '\n') // Remove trailing spaces before newlines
+    .replace(/\n[ \t]+/g, '\n'); // Remove leading spaces after newlines
+}
+
+/**
  * Get tutor response for current conversation
  * Note: Student message should already be added to messages before calling
  */
@@ -36,10 +50,13 @@ export async function sendMessage(
     onRetry
   );
 
+  // Sanitize content to prevent excessive whitespace
+  const sanitizedContent = sanitizeContent(tutorResponse.message);
+
   // Create tutor message with all metadata
   const tutorMsg: Message = {
     role: 'tutor',
-    content: tutorResponse.message,
+    content: sanitizedContent,
     annotations: tutorResponse.annotations,
     currentState: tutorResponse.currentState,
     isComplete: tutorResponse.isComplete,
@@ -66,4 +83,41 @@ export function getTurnCount(messages: Message[]): number {
  */
 export function shouldWarnAboutLength(messages: Message[]): boolean {
   return getTurnCount(messages) >= 15;
+}
+
+/**
+ * Save completed problem attempt to database
+ * Called when a problem is marked as complete (masteryLevel is set)
+ */
+export async function saveProblemAttempt(
+  problemText: string,
+  messages: Message[]
+): Promise<void> {
+  try {
+    const turnsTaken = getTurnCount(messages);
+
+    const response = await fetch('/api/save-attempt', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        problemText,
+        turnsTaken,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      console.error('Failed to save attempt:', error);
+      // Don't throw - we don't want to interrupt the user experience
+      return;
+    }
+
+    const data = await response.json();
+    console.log('✅ Attempt saved successfully:', data);
+  } catch (error) {
+    console.error('Error saving attempt:', error);
+    // Silently fail - don't interrupt user experience
+  }
 }

@@ -1,6 +1,6 @@
 /**
- * Solution Path Progress Component
- * Simple icon-based progress indicator
+ * Solution Path Progress Component (SIMPLIFIED)
+ * Clean, student-focused progress indicator
  */
 
 import type { SolutionPath } from '@/types/solution-path';
@@ -31,33 +31,21 @@ export default function SolutionPathProgress({
   const isProblemComplete = masteryLevel === 'mastered' || masteryLevel === 'competent';
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 justify-center">
       {currentApproach.steps.map((_, index) => {
         const isCompleted = isProblemComplete ? true : index < currentStepIndex;
         const isCurrent = !isProblemComplete && index === currentStepIndex;
-        const isLastStepJustCompleted = isProblemComplete && index === totalSteps - 1;
 
         return (
           <div
             key={index}
-            className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
+            className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
               isCompleted
-                ? 'bg-green-500'
+                ? 'bg-green-500 animate-scaleIn'
                 : isCurrent
-                ? darkMode
-                  ? 'bg-blue-600'
-                  : 'bg-blue-500'
-                : darkMode
-                ? 'bg-gray-700'
-                : 'bg-gray-300'
-            } ${isLastStepJustCompleted ? 'animate-pulse-once' : ''}`}
-            title={
-              isCompleted
-                ? 'Completed'
-                : isCurrent
-                ? `Step ${index + 1}/${totalSteps} - In progress`
-                : `Step ${index + 1}/${totalSteps} - Pending`
-            }
+                ? 'bg-blue-600 ring-2 ring-blue-400 animate-pulse-slow'
+                : 'bg-gray-700'
+            }`}
           >
             {isCompleted ? (
               <svg
@@ -74,15 +62,7 @@ export default function SolutionPathProgress({
                 />
               </svg>
             ) : (
-              <span
-                className={`text-xs font-semibold ${
-                  isCurrent
-                    ? 'text-white'
-                    : darkMode
-                    ? 'text-gray-500'
-                    : 'text-gray-600'
-                }`}
-              >
+              <span className={`text-xs font-semibold ${isCurrent ? 'text-white' : 'text-gray-500'}`}>
                 {index + 1}
               </span>
             )}

@@ -10,6 +10,7 @@ import type { SolutionPath } from '@/types/solution-path';
 // CORS allowlist
 const ALLOWED_ORIGINS = [
   'http://localhost:3000',
+  'http://localhost:3001',
   process.env.NEXT_PUBLIC_VERCEL_URL
     ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
     : null,
@@ -234,6 +235,13 @@ IMPORTANT GUIDELINES:
 - For complex problems, provide multiple approaches when valid
 - Keep step count reasonable (3-5 steps per approach)
 - Be concise but complete`;
+
+    // Log API key being used (masked for security)
+    const apiKey = process.env.OPENAI_API_KEY || '';
+    const maskedKey = apiKey.length > 14
+      ? `${apiKey.slice(0, 10)}...${apiKey.slice(-4)}`
+      : 'NOT_SET';
+    console.log('[API Key Check - Analyze]', maskedKey);
 
     // Call OpenAI API with JSON mode
     const response = await openai.chat.completions.create({

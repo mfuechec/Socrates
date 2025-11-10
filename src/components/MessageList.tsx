@@ -30,19 +30,23 @@ export default function MessageList({
   showWhiteboards = true,
 }: MessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to newest message
+  // Auto-scroll to newest message - prevent page-level scrolling
   useEffect(() => {
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+    if (messagesEndRef.current) {
+      // Use scrollIntoView with block: 'nearest' to prevent scrolling outside the immediate scroll parent
+      messagesEndRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'nearest'
+      });
     }
   }, [messages, isLoading]);
 
   return (
-    <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-6">
+    <div className="p-6 flex flex-col">
       {/* Messages */}
-      <div className="space-y-4">
+      <div className="space-y-4 mt-auto">
         {messages.map((msg, idx) => (
           <div
             key={idx}
