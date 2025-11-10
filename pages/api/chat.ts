@@ -25,8 +25,17 @@ const MAX_PROBLEM_LENGTH = 500;
 const MAX_MESSAGE_LENGTH = 1000;
 
 // Initialize OpenAI client
+const apiKey = process.env.OPENAI_API_KEY;
+
+// Debug: Log if API key is missing (only log length for security)
+if (!apiKey) {
+  console.error('[CHAT API] OPENAI_API_KEY is not set!');
+} else {
+  console.log('[CHAT API] OPENAI_API_KEY is set (length:', apiKey.length, ')');
+}
+
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: apiKey,
 });
 
 export default async function handler(
